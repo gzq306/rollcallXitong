@@ -1385,12 +1385,20 @@ function initVoice(){
   rec.onstart = () => { voiceOn = true; $('#voice-btn').classList.add('active'); $('#voice-btn').textContent = '🔴 正在听'; setVoiceStatus('正在聆听…说"点名""停止""点赞""加油"'); };
   rec.onend = () => {
     if(voiceRestart){
-      try{ rec.start(); }catch(e){ voiceRestart=false; voiceOn=false; $('#voice-btn').classList.remove('active'); $('#voice-btn').textContent='🎤 语音控制'; setVoiceStatus('启动失败：'+(e.message||e)); }
+      // 延迟重启，避免状态冲突；失败则重试一次
+      setTimeout(() => {
+        if(!voiceRestart) return;
+        try{ rec.start(); }catch(e){
+          setTimeout(() => { if(voiceRestart){ try{ rec.start(); }catch(err){} } }, 300);
+        }
+      }, 200);
     } else {
       voiceOn = false; $('#voice-btn').classList.remove('active'); $('#voice-btn').textContent = '🎤 语音控制'; setVoiceStatus('已关闭，点击开启语音控制');
     }
   };
   rec.onerror = e => {
+    // no-speech / aborted 是正常中断，不停止自动重启
+    if(e.error === 'no-speech' || e.error === 'aborted'){ return; }
     voiceRestart = false;
     voiceOn = false;
     $('#voice-btn').classList.remove('active');
@@ -1400,8 +1408,6 @@ function initVoice(){
       'service-not-allowed': '语音服务被禁用，请检查浏览器设置',
       'audio-capture': '未检测到麦克风设备，请检查麦克风是否连接',
       'network': '网络错误，语音识别需要联网',
-      'aborted': '语音识别已中止',
-      'no-speech': '未检测到语音，请再试一次',
       'language-not-supported': '不支持中文语音识别'
     };
     const msg = errMap[e.error] || ('语音错误：'+e.error);
@@ -1419,8 +1425,8 @@ function initVoice(){
     setVoiceStatus('听到：<span class="cmd">'+esc(text)+'</span>');
     if(handleVoiceCommand(text)){
       voiceLock = true;
-      setTimeout(() => { voiceLock = false; }, 600);
-      try{ rec.abort(); }catch(err){}
+      setTimeout(() => { voiceLock = false; }, 800);
+      // 不停止识别，保持常开，靠 voiceLock 防抖
     }
   };
   return rec;
